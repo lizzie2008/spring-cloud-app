@@ -1,0 +1,12 @@
+eureka:
+  client:
+    fetch-registry: false #���ò���ע�����Ļ�ȡע����Ϣ
+    register-with-eureka: false #����������Ϊ�ͻ���ע�ᵽע������
+#    defaultZone: http://localhost:8762/eureka/ #ָ������ע���ַ
+
+spring:
+  application:
+    name: eureka-server #Ӧ������
+
+server:
+  port: 8761  #Ӧ�÷���˿�
