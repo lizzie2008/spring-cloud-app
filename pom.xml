@@ -11,7 +11,9 @@
 
     <modules>
         <module>eureka-server</module>
-        <module>shopping-provider</module>
+        <module>shopping-product</module>
+        <module>shopping-common</module>
+        <module>shopping-order</module>
     </modules>
 
     <groupId>tech.lancelot</groupId>

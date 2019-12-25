@@ -2,7 +2,7 @@
 
 - 新建一个工程：选择Spring Cloud Bootstrap，对应的Spring Boot 版本2.2.2。
 
-![image-20191223145912954](http://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191223145916-192957.png) 
+![image-20191223145912954](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191223145916-192957.png) 
 
 - 项目生成后，看到对应的Spring版本的依赖没有问题。
 
