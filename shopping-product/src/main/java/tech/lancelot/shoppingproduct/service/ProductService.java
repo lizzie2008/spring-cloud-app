@@ -1,10 +1,9 @@
 package tech.lancelot.shoppingproduct.service;
 
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import tech.lancelot.shoppingcommon.dto.ProductItemOutput;
-import tech.lancelot.shoppingcommon.dto.ProductOutput;
+import tech.lancelot.shoppingcommon.dto.ProductCategoryOutput;
+import tech.lancelot.shoppingcommon.dto.ProductInfoOutput;
 import tech.lancelot.shoppingproduct.domain.ProductCategory;
 import tech.lancelot.shoppingproduct.domain.ProductInfo;
 
@@ -14,6 +13,9 @@ import tech.lancelot.shoppingproduct.repository.ProductInfoRepository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+
+import static org.springframework.beans.BeanUtils.*;
 
 @Service
 public class ProductService {
@@ -29,36 +31,51 @@ public class ProductService {
     }
 
     /**
-     * 获取所有目类下的上架商品
+     * 获取所有商品类目
+     *
      * @return
      */
-    public List<ProductOutput> list() {
-
-        List<ProductOutput> productOutputs = new ArrayList<>();
-
-        //1.找到商品所有类目
-        List<ProductCategory> categories = productCategoryRepository.findAll();
-
-        //2.遍历商品，找到类目下所有上架商品
-        for (ProductCategory category : categories) {
-
-            //构建类目信息
-            ProductOutput productOutput = new ProductOutput();
-            BeanUtils.copyProperties(category, productOutput);
-            productOutputs.add(productOutput);
-
-            List<ProductInfo> productInfos = productInfoRepository
-                    .findByCategoryTypeAndProductStatus(category.getCategoryType(), ProductStatus.ON_SALE);
-
-            List<ProductItemOutput> productItemOutputs = new ArrayList<>();
-            for (ProductInfo productInfo : productInfos) {
-                //构建类目下商品信息
-                ProductItemOutput productItemOutput = new ProductItemOutput();
-                BeanUtils.copyProperties(productInfo, productItemOutput);
-                productItemOutputs.add(productItemOutput);
-            }
-            productOutput.setProductItemOutputs(productItemOutputs);
-        }
-        return productOutputs;
+    public List<ProductCategory> findCategories() {
+        return productCategoryRepository.findAll();
     }
+
+    /**
+     * 获取所有商品类目(根据id获取)
+     *
+     * @return
+     */
+    public Optional<ProductCategory> findCategoriesById(Integer id) {
+        return productCategoryRepository.findById(id);
+    }
+
+    /**
+     * 获取所有上架商品信息
+     *
+     * @return
+     */
+    public List<ProductInfo> findProductInfos() {
+        return productInfoRepository.findByProductStatus(ProductStatus.ON_SALE);
+    }
+
+    /**
+     * 获取某个类目下的所有上架商品
+     * @param id
+     * @return
+     */
+    public List<ProductInfo> findAllProductInfosByCategory(Integer id) {
+        return productInfoRepository.findByCategoryIdAndProductStatus(id,ProductStatus.ON_SALE);
+    }
+
+    /**
+     * 获取某些Id的上架商品
+     *
+     * @param productIds
+     * @return
+     */
+    public List<ProductInfo> findProductInfosByIds(List<String> productIds) {
+        return productInfoRepository.findByProductIdInAndProductStatus(productIds, ProductStatus.ON_SALE);
+    }
+
+
+
 }

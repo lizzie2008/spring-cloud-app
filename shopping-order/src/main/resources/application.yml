@@ -5,7 +5,7 @@ eureka:
 
 spring:
   application:
-    name: shopping-product  #应用名称
+    name: shopping-order  #应用名称
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
@@ -16,4 +16,8 @@ spring:
     database-platform: org.hibernate.dialect.MySQLDialect
 
 server:
-  port: 9000
+  port: 9010
+
+#shopping-order:
+#  ribbon:
+#    NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule

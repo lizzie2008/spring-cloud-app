@@ -5,6 +5,6 @@ import org.springframework.stereotype.Repository;
 import tech.lancelot.shoppingproduct.domain.ProductCategory;
 
 @Repository
-public interface ProductCategoryRepository extends JpaRepository<ProductCategory,String> {
+public interface ProductCategoryRepository extends JpaRepository<ProductCategory,Integer> {
 
 }

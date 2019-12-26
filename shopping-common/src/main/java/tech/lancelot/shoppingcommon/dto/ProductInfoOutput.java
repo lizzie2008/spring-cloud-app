@@ -6,7 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
-public class ProductItemOutput {
+public class ProductInfoOutput {
 
     @JsonProperty("id")
     private String productId;
