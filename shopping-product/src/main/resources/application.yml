@@ -1,7 +1,7 @@
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/ #指定服务注册地址
+      defaultZone: http://aliyun.host:8761/eureka/,http://aliyun.host:8762/eureka/ #指定服务注册地址
 
 spring:
   application:

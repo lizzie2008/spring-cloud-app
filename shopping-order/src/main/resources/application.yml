@@ -1,7 +1,7 @@
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://localhost:8761/eureka/ #指定服务注册地址
+      defaultZone: http://aliyun.host:8761/eureka/,http://aliyun.host:8762/eureka/ #指定服务注册地址
 
 spring:
   application:
@@ -14,6 +14,19 @@ spring:
   jpa:
     show-sql: true
     database-platform: org.hibernate.dialect.MySQLDialect
+  rabbitmq:
+    host: aliyun.host
+    port: 5672
+    username: guest
+    password: guest
+  cloud:
+    stream:
+      bindings:
+        myMessage:
+          group: shopping-order
+          content-type: application/json
+#          consumer:
+#            acknowledge-mode: manual
 
 server:
   port: 9010

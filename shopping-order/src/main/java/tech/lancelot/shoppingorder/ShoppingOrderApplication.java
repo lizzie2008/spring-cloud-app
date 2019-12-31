@@ -8,10 +8,10 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 
 @SpringBootApplication
 @EnableDiscoveryClient
-@EnableFeignClients
+@EnableFeignClients(basePackages = "tech.lancelot.shoppingorder.client")
 public class ShoppingOrderApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(ShoppingOrderApplication.class,args);
+        SpringApplication.run(ShoppingOrderApplication.class, args);
     }
 }

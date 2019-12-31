@@ -1,4 +1,4 @@
-# 创建工程
+创建工程
 
 - 新建一个工程：选择Spring Cloud Bootstrap，对应的Spring Boot 版本2.2.2。
 
@@ -410,3 +410,296 @@ public List<ProductInfoOutput> findProductInfosByIds(){
 在实现负载均衡基础上，封装声明式服务调用。实现shopping-order对shopping-product的透明调用，系统架构如图如下。
 
 ![image-20191226153226801](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191226153227-511711.png) 
+
+# 异步消息（Stream）
+
+## 应用场景
+
+1、异步处理
+
+比如用户在电商网站下单，下单完成后会给用户推送短信或邮件，发短信和邮件的过程就可以异步完成。因为下单付款是核心业务，发邮件和短信并不属于核心功能，并且可能耗时较长，所以针对这种业务场景可以选择先放到消息队列中，有其他服务来异步处理。
+
+2、应用解耦：
+
+假设公司有几个不同的系统，各系统在某些业务有联动关系，比如 A 系统完成了某些操作，需要触发 B 系统及 C 系统。如果 A 系统完成操作，主动调用 B 系统的接口或 C 系统的接口，可以完成功能，但是各个系统之间就产生了耦合。用消息中间件就可以完成解耦，当 A 系统完成操作将数据放进消息队列，B 和 C 系统去订阅消息就可以了。这样各系统只要约定好消息的格式就好了。
+
+3、流量削峰
+
+比如秒杀活动，一下子进来好多请求，有的服务可能承受不住瞬时高并发而崩溃，所以针对这种瞬时高并发的场景，在中间加一层消息队列，把请求先入队列，然后再把队列中的请求平滑的推送给服务，或者让服务去队列拉取。
+
+4、日志处理
+
+kafka 最开始就是专门为了处理日志产生的。
+
+当碰到上面的几种情况的时候，就要考虑用消息队列了。如果你碰巧使用的是 RabbitMQ 或者 kafka ，而且同样也是在使用 Spring Cloud ，那可以考虑下用 Spring Cloud Stream。Spring Cloud Stream 是消息中间件组件，它集成了 kafka 和 rabbitmq ，本文以rabbitmq 为例。
+
+## stream-rabbit
+
+shopping-product项目中
+
+- 首先引入stream-rabbit依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-stream-rabbit</artifactId>
+</dependency>
+```
+
+- application.yml中作相应的配置：
+
+```yaml
+spring:
+  rabbitmq:
+    host: aliyun.host
+    port: 5672
+    username: guest
+    password: guest
+```
+
+- 消息接口定义
+
+```java
+public interface StreamClient {
+
+    String INPUT = "myMessage";
+
+    @Input(StreamClient.INPUT)
+    SubscribableChannel input();
+
+    @Output(StreamClient.INPUT)
+    MessageChannel output();
+}
+```
+
+- 接收端处理逻辑
+
+```java
+@Component
+@EnableBinding(StreamClient.class)
+@Slf4j
+public class StreamReceiver {
+
+    @StreamListener(value = StreamClient.INPUT)
+    public void process(OrderInput orderInput) {
+        log.info("StreamReceiver: {}", orderInput);
+    }
+}
+```
+
+- 发送端处理逻辑
+
+```java
+@RestController
+@RequestMapping("api/v1/stream")
+@Slf4j
+public class StreamController {
+
+    private final StreamClient streamClient;
+
+    @Autowired
+    public StreamController(StreamClient streamClient) {
+        this.streamClient = streamClient;
+    }
+
+    @GetMapping("/sendMessage")
+    public void sendMessage() {
+        OrderInput orderInput=new OrderInput();
+        orderInput.setBuyerName("小王");
+        orderInput.setBuyerPhone("15011111111");
+        orderInput.setBuyerAddress("姥姥家");
+        orderInput.setBuyerOpenid("11111");
+        streamClient.output().send(MessageBuilder.withPayload(orderInput).build());
+    }
+}
+```
+
+启动应用程序，测试发送接口，发现spring-cloud-stream帮我们自动创建了一个队列，消息发送到这个队列，然后被接收端消费。
+
+![image-20191231161853339](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191231161855-234392.png) 
+
+此时，如果我们启动多个shopping-product服务实例，会有个问题，如果发送端发送一条消息，会被2个实例同时消费，在正常的业务中，这种情况是应该避免的。所以我们需要对消息进行分组，在application.yml中增加如下配置，保证只有一个服务实例来消费。
+
+```yaml
+spring:
+  rabbitmq:
+    host: aliyun.host
+    port: 5672
+    username: guest
+    password: guest
+  cloud:
+    stream:
+      bindings:
+        myMessage:
+          group: shopping-order
+          content-type: application/json
+```
+
+
+
+
+
+# 容器化部署
+
+## 安装Docker
+
+```bash
+[root@localhost ~]# yum install docker
+[root@localhost ~]# systemctrl enable docker	#设置docker开机启动
+[root@localhost ~]# systemctrl start docker		#启动docker
+```
+
+- 配置vi /etc/docker/deamon.json，添加国内加速镜像
+
+```json
+{
+ "registry-mirrors": ["http://hub-mirror.c.163.com"],
+ "registry-mirrors": ["https://njrds9qc.mirror.aliyuncs.com"]
+}
+```
+
+- 重启生效
+
+```bash
+[root@localhost ~]# systemctl daemon-reload
+[root@localhost ~]# systemctl restart docker
+```
+
+- 验证是否成功安装
+
+```bash
+[root@localhost ~]# docker -v
+Docker version 1.13.1, build 7f2769b/1.13.1
+```
+
+## 安装Docker-Compose
+
+- 检查是否安装python-pip
+
+```bash
+[root@localhost ~]# pip -V
+```
+
+- 已安装pip则跳过该步骤，否则安装pip
+
+```bash
+[root@localhost ~]# yum -y install epel-release
+[root@localhost ~]# yum -y install python-pip
+[root@localhost ~]# pip install --upgrade pip
+```
+
+- 安装docker-compose
+
+```bash
+[root@localhost ~]# pip install docker-compose
+```
+
+- 安装过程中如果出现Command errored python setup.py egg_info 可尝试升级setuptools
+
+```bash
+[root@localhost ~]# pip install more-itertools==5.0.0
+```
+
+- 验证是否成功安装
+
+```bash
+[root@localhost ~]# docker-compose -v
+docker-compose version 1.25.0, build b42d419
+```
+
+## Eureka部署
+
+- 首先我们创建2个节点的配置文件
+
+application.yml：
+
+```yaml
+spring:
+  application:
+    name: eureka-server #应用名称
+  profiles:
+    active: peer1
+```
+
+application-peer1.yml：
+
+```yaml
+eureka:
+  client:
+    service-url:
+      defaultZone: http://peer2:8762/eureka/ #指定服务注册地址
+
+server:
+  port: 8761  #应用服务端口
+```
+
+application-peer2.yml：
+
+```yaml
+eureka:
+    client:
+      service-url:
+        defaultZone: http://peer1:8761/eureka/ #指定服务注册地址
+
+    server:
+      port: 8762  #应用服务端口
+```
+
+- 在eureka-server项目下新建Dockerfile文件
+
+```dockerfile
+FROM hub.c.163.com/library/java:8-alpine
+ADD target/*.jar app.jar
+EXPOSE 8761
+EXPOSE 8762
+ENTRYPOINT ["java","-jar","/app.jar"]
+```
+
+- 构建镜像：
+
+```bash
+mvn clean package -Dmaven.test.skip=true -U
+docker build -t spring-cloud-app/eureka-server:v1 .
+```
+
+- 编排镜像：
+
+docker-compose.yml：
+
+```yaml
+version: "2"
+services:
+  peer1:      # 默认情况下，其他服务可以使用服务名称连接到该服务。因此，对于peer2的节点，它需要连接http://peer1:8761/eureka/，因此需要配置该服务的名称是peer1。
+    image: spring-cloud-app/eureka-server:v1
+    hostname: peer1
+    networks:
+      - eureka-net
+    ports:
+      - "8761:8761"
+    environment:
+      - spring.profiles.active=peer1
+  peer2:
+    image: spring-cloud-app/eureka-server:v1
+    hostname: peer2
+    networks:
+      - eureka-net
+    ports:
+      - "8762:8762"
+    environment:
+      - spring.profiles.active=peer2
+networks:
+  eureka-net:
+    driver: bridge
+```
+
+## RabbitMQ
+
+` -management` 表示有管理界面的，可以浏览器访问。5672是访问端口，15672是管理端口。
+
+```bash
+[root@localhost ~]# docker run -d --hostname rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.8.2-management
+```
+
+访问端口管理界面，输入默认用户名/密码 ：guest/guest
+
+![image-20191231144756782](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191231144758-140801.png) 

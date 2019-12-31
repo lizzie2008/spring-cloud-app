@@ -1,0 +1,31 @@
+version: "2"
+services:
+  peer1:      # 默认情况下，其他服务可以使用服务名称连接到该服务。因此，对于peer2的节点，它需要连接http://peer1:8761/eureka/，因此需要配置该服务的名称是peer1。
+    image: spring-cloud-app/eureka-server:v1
+    hostname: peer1
+    networks:
+      - eureka-net
+    ports:
+      - "8761:8761"
+    environment:
+      - spring.profiles.active=peer1
+  peer2:
+    image: spring-cloud-app/eureka-server:v1
+    hostname: peer2
+    networks:
+      - eureka-net
+    ports:
+      - "8762:8762"
+    environment:
+      - spring.profiles.active=peer2
+  rabbitmq:
+    image: docker.io/rabbitmq:3.8.2-management
+    hostname: rabbitmq
+    networks:
+      - eureka-net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+networks:
+  eureka-net:
+    driver: bridge
