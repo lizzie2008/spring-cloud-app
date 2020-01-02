@@ -433,9 +433,74 @@ kafka 最开始就是专门为了处理日志产生的。
 
 当碰到上面的几种情况的时候，就要考虑用消息队列了。如果你碰巧使用的是 RabbitMQ 或者 kafka ，而且同样也是在使用 Spring Cloud ，那可以考虑下用 Spring Cloud Stream。Spring Cloud Stream 是消息中间件组件，它集成了 kafka 和 rabbitmq ，本文以rabbitmq 为例。
 
-## stream-rabbit
+## 当前项目场景
 
-shopping-product项目中
+分析目前shopping-order项目中，创建订单的代码如下：
+
+```java
+/**
+     * 创建订单
+     *
+     */
+@Transactional
+public String Create(OrderInput orderInput) throws Exception {
+
+    //扣库存
+    ResultVo result1=productClient.decreaseStock(orderInput.getOrderItemInputs());
+    if (result1.getCode() != 0)
+        throw new Exception("调用订单扣减库存接口出错：" + result1.getMsg());
+
+    //构建订单主表
+    OrderMaster orderMaster = new OrderMaster();
+    BeanUtils.copyProperties(orderInput, orderMaster);
+    //指定默认值
+    orderMaster.setOrderId(KeyUtil.genUniqueKey("OM"));
+    orderMaster.setOrderStatus(OrderStatus.NEW);
+    orderMaster.setPayStatus(PayStatus.WAIT);
+
+    //构建订单明细
+    List<String> productIds = orderInput.getOrderItemInputs().stream().map(OrderItemInput::getProductId).collect(Collectors.toList());
+    ResultVo<List<ProductInfoOutput>> result2 = productClient.findProductInfosByIds(String.join(",", productIds));
+    if (result2.getCode() != 0)
+        throw new Exception("调用订单查询接口出错：" + result2.getMsg());
+    List<ProductInfoOutput> productInfoOutputs = result2.getData();
+
+    //订单金额总计
+    BigDecimal total = new BigDecimal(BigInteger.ZERO);
+    for (OrderItemInput orderItemInput : orderInput.getOrderItemInputs()) {
+        OrderDetail orderDetail = new OrderDetail();
+        BeanUtils.copyProperties(orderItemInput, orderDetail);
+
+        Optional<ProductInfoOutput> productInfoOutputOptional = productInfoOutputs.stream()
+            .filter(s -> s.getProductId().equals(orderItemInput.getProductId())).findFirst();
+
+        if (!productInfoOutputOptional.isPresent())
+            throw new Exception(String.format("商品【%s】不存在", orderItemInput.getProductId()));
+
+        ProductInfoOutput productInfoOutput = productInfoOutputOptional.get();
+        orderDetail.setDetailId(KeyUtil.genUniqueKey("OD"));
+        orderDetail.setOrderId(orderMaster.getOrderId());
+        orderDetail.setProductName(productInfoOutput.getProductName());
+        orderDetail.setProductPrice(productInfoOutput.getProductPrice().multiply(new BigDecimal(orderDetail.getProductQuantity())));
+        orderDetail.setProductIcon(productInfoOutput.getProductIcon());
+        total = total.add(orderDetail.getProductPrice());
+
+        orderDetailRepository.save(orderDetail);
+    }
+
+    orderMaster.setOrderAmount(total);
+    orderMasterRepository.save(orderMaster);
+    return orderMaster.getOrderId();
+}
+```
+
+创建订单的同时，先调用商品接口扣减库存，如果占用库存成功，再生成订单。这样的话，生成订单的操作和占用商品库存的操作其实是耦合在一起的。在实际电商高并发、高流量的情况下，我们很少这么做。所以，我们要将业务解耦，实现订单和扣减库存的异步处理。
+
+大体思路如下：生成订单==》通知商品调用库存==》商品占用库存==》通知订单占用成功==》更新订单占用库存状态
+
+## stream-rabbit集成
+
+shopping-order、shopping-product项目中
 
 - 首先引入stream-rabbit依赖：
 
@@ -535,9 +600,212 @@ spring:
           content-type: application/json
 ```
 
+## 改造Order和Product项目
 
+shopping-order作为库存占用命令的消息发送者，首先向shopping-product发送消息stock_apply（占用库存申请），shopping-product接收此消息进行库存处理，然后将库存占用处理的结果作为消息stock_result（占用库存结果）发送，shopping-order端再收到结果消息对订单状态进行更新。
 
+- shopping-order配置：
 
+```yaml
+spring:
+  cloud:
+    stream:
+      bindings:
+        stock_apply_output:           #占用库存申请
+          destination: stock.apply
+        stock_result_input:           #占用库存结果
+          destination: stock.result
+          group: shopping-order
+```
+
+- shopping-product配置：
+
+```yaml
+spring:
+  cloud:
+    stream:
+      bindings:
+        stock_apply_input:            #占用库存申请
+          destination: stock.apply
+          group: shopping-product
+        stock_result_output:          #占用库存结果
+          destination: stock.result
+```
+
+- shopping-order定义channel
+
+```java
+public interface OrderStream {
+
+    String STOCK_APPLY_OUTPUT = "stock_apply_output";
+    @Output(OrderStream.STOCK_APPLY_OUTPUT)
+    MessageChannel stockApplyOutput();
+
+    String STOCK_RESULT_INPUT = "stock_result_input";
+    @Input(OrderStream.STOCK_RESULT_INPUT)
+    SubscribableChannel stockResultInput();
+}
+```
+
+- shopping-product定义channel
+
+```java
+public interface ProductStream {
+
+    String STOCK_APPLY_INPUT = "stock_apply_input";
+    @Input(ProductStream.STOCK_APPLY_INPUT)
+    SubscribableChannel stockApplyInput();
+
+    String STOCK_RESULT_OUTPUT = "stock_result_output";
+    @Output(ProductStream.STOCK_RESULT_OUTPUT)
+    MessageChannel stockResultOutput();
+}
+
+```
+
+- shopping-order发送库存申请消息
+
+```java
+/**
+     * 创建订单
+     */
+    @Transactional
+    public String Create(OrderInput orderInput) throws Exception {
+
+        //构建订单主表
+        OrderMaster orderMaster = new OrderMaster();
+        BeanUtils.copyProperties(orderInput, orderMaster);
+        //指定默认值
+        orderMaster.setOrderId(KeyUtil.genUniqueKey("OM"));
+        orderMaster.setOrderStatus(OrderStatus.NEW);
+        orderMaster.setPayStatus(PayStatus.WAIT);
+
+        //构建订单明细
+        List<String> productIds = orderInput.getOrderItemInputs().stream().map(OrderItemInput::getProductId).collect(Collectors.toList());
+        ResultVo<List<ProductInfoOutput>> result2 = productClient.findProductInfosByIds(String.join(",", productIds));
+        if (result2.getCode() != 0)
+            throw new Exception("调用订单查询接口出错：" + result2.getMsg());
+        List<ProductInfoOutput> productInfoOutputs = result2.getData();
+
+        //订单金额总计
+        BigDecimal total = new BigDecimal(BigInteger.ZERO);
+        for (OrderItemInput orderItemInput : orderInput.getOrderItemInputs()) {
+            OrderDetail orderDetail = new OrderDetail();
+            BeanUtils.copyProperties(orderItemInput, orderDetail);
+
+            Optional<ProductInfoOutput> productInfoOutputOptional = productInfoOutputs.stream()
+                    .filter(s -> s.getProductId().equals(orderItemInput.getProductId())).findFirst();
+
+            if (!productInfoOutputOptional.isPresent())
+                throw new Exception(String.format("商品【%s】不存在", orderItemInput.getProductId()));
+
+            ProductInfoOutput productInfoOutput = productInfoOutputOptional.get();
+            orderDetail.setDetailId(KeyUtil.genUniqueKey("OD"));
+            orderDetail.setOrderId(orderMaster.getOrderId());
+            orderDetail.setProductName(productInfoOutput.getProductName());
+            orderDetail.setProductPrice(productInfoOutput.getProductPrice().multiply(new BigDecimal(orderDetail.getProductQuantity())));
+            orderDetail.setProductIcon(productInfoOutput.getProductIcon());
+            total = total.add(orderDetail.getProductPrice());
+
+            orderDetailRepository.save(orderDetail);
+        }
+
+        orderMaster.setOrderAmount(total);
+        orderMasterRepository.save(orderMaster);
+
+        //扣库存
+        StockApplyInput stockApplyInput = new StockApplyInput();
+        stockApplyInput.setOrderId(orderMaster.getOrderId());
+        stockApplyInput.setOrderItemInputs(orderInput.getOrderItemInputs());
+        orderStream.stockApplyOutput().send(MessageBuilder.withPayload(stockApplyInput).build());
+
+        return orderMaster.getOrderId();
+    }
+```
+
+- shopping-product处理库存申请消息，并发送库存处理结果
+
+```java
+@Service
+@Slf4j
+@EnableBinding(ProductStream.class)
+public class ProductService {
+
+    private final ProductInfoRepository productInfoRepository;
+    private final ProductCategoryRepository productCategoryRepository;
+
+    @Autowired
+    public ProductService(ProductInfoRepository productInfoRepository,
+                          ProductCategoryRepository productCategoryRepository) {
+        this.productInfoRepository = productInfoRepository;
+        this.productCategoryRepository = productCategoryRepository;
+    }
+
+    /**
+     * 扣减库存
+     *
+     */
+    @Transactional
+    @StreamListener(ProductStream.STOCK_APPLY_INPUT)
+    @SendTo(ProductStream.STOCK_RESULT_OUTPUT)
+    public StockResultOutput processStockApply(StockApplyInput stockApplyInput) throws Exception {
+
+        log.info("占用库存消息被消费...");
+        StockResultOutput stockResultOutput = new StockResultOutput();
+        stockResultOutput.setOrderId(stockApplyInput.getOrderId());
+
+        try {
+            for (OrderItemInput orderItemInput : stockApplyInput.getOrderItemInputs()) {
+
+                Optional<ProductInfo> productInfoOptional = productInfoRepository.findById(orderItemInput.getProductId());
+                if (!productInfoOptional.isPresent())
+                    throw new Exception("商品不存在.");
+
+                ProductInfo productInfo = productInfoOptional.get();
+                int result = productInfo.getProductStock() - orderItemInput.getProductQuantity();
+                if (result < 0)
+                    throw new Exception("商品库存不满足.");
+
+                productInfo.setProductStock(result);
+                productInfoRepository.save(productInfo);
+            }
+
+            stockResultOutput.setIsSuccess(true);
+            stockResultOutput.setMessage("OK");
+            return stockResultOutput;
+        } catch (Exception e) {
+            stockResultOutput.setIsSuccess(false);
+            stockResultOutput.setMessage(e.getMessage());
+            return stockResultOutput;
+        }
+
+    }
+
+}
+```
+
+- shopping-order处理库存处理结果
+
+```java
+@StreamListener(OrderStream.STOCK_RESULT_INPUT)
+public void processStockResult(StockResultOutput stockResultOutput) {
+
+    log.info("库存消息返回" + stockResultOutput);
+
+    Optional<OrderMaster> optionalOrderMaster = orderMasterRepository.findById(stockResultOutput.getOrderId());
+    if (optionalOrderMaster.isPresent()) {
+        OrderMaster orderMaster = optionalOrderMaster.get();
+        if (stockResultOutput.getIsSuccess()) {
+            orderMaster.setOrderStatus(OrderStatus.OCCUPY_SUCCESS);
+        } else {
+            orderMaster.setOrderStatus(OrderStatus.OCCUPY_FAILURE);
+        }
+        orderMasterRepository.save(orderMaster);
+    }
+}
+```
+
+执行调试结果，跟踪执行结果：生成订单同时发送库存申请命令，商品模块处理库存申请成功后，返回库存占用结果告知订单模块，从而实现订单生成和商品库存占用的逻辑的解耦。
 
 # 容器化部署
 

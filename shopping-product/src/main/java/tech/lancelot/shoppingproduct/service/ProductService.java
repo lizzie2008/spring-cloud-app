@@ -1,21 +1,29 @@
 package tech.lancelot.shoppingproduct.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.stream.annotation.EnableBinding;
+import org.springframework.cloud.stream.annotation.StreamListener;
+import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.lancelot.shoppingcommon.dto.OrderItemInput;
+import tech.lancelot.shoppingcommon.dto.StockApplyInput;
+import tech.lancelot.shoppingcommon.dto.StockResultOutput;
+import tech.lancelot.shoppingcommon.enums.ProductStatus;
 import tech.lancelot.shoppingproduct.domain.ProductCategory;
 import tech.lancelot.shoppingproduct.domain.ProductInfo;
-
-import tech.lancelot.shoppingcommon.enums.ProductStatus;
 import tech.lancelot.shoppingproduct.repository.ProductCategoryRepository;
 import tech.lancelot.shoppingproduct.repository.ProductInfoRepository;
+import tech.lancelot.shoppingproduct.stream.ProductStream;
 
 import java.util.List;
 import java.util.Optional;
 
 
 @Service
+@Slf4j
+@EnableBinding(ProductStream.class)
 public class ProductService {
 
     private final ProductInfoRepository productInfoRepository;
@@ -44,7 +52,7 @@ public class ProductService {
      */
     public ProductCategory findCategoriesById(Integer id) throws Exception {
         Optional<ProductCategory> productCategoryOptional = productCategoryRepository.findById(id);
-        if(productCategoryOptional.isPresent())
+        if (productCategoryOptional.isPresent())
             return productCategoryOptional.get();
         throw new Exception("商品不存在.");
     }
@@ -80,26 +88,42 @@ public class ProductService {
 
     /**
      * 扣减库存
-     * @param orderItemInputs
-     * @throws Exception
+     *
      */
     @Transactional
-    public void decreaseStock(List<OrderItemInput> orderItemInputs) throws Exception {
+    @StreamListener(ProductStream.STOCK_APPLY_INPUT)
+    @SendTo(ProductStream.STOCK_RESULT_OUTPUT)
+    public StockResultOutput processStockApply(StockApplyInput stockApplyInput) throws Exception {
 
-        for (OrderItemInput orderItemInput : orderItemInputs) {
+        log.info("占用库存消息被消费...");
+        StockResultOutput stockResultOutput = new StockResultOutput();
+        stockResultOutput.setOrderId(stockApplyInput.getOrderId());
 
-            Optional<ProductInfo> productInfoOptional = productInfoRepository.findById(orderItemInput.getProductId());
-            if (!productInfoOptional.isPresent())
-                throw new Exception("商品不存在.");
+        try {
+            for (OrderItemInput orderItemInput : stockApplyInput.getOrderItemInputs()) {
 
-            ProductInfo productInfo = productInfoOptional.get();
-            int result = productInfo.getProductStock() - orderItemInput.getProductQuantity();
-            if (result < 0)
-                throw new Exception("商品库存不满足.");
+                Optional<ProductInfo> productInfoOptional = productInfoRepository.findById(orderItemInput.getProductId());
+                if (!productInfoOptional.isPresent())
+                    throw new Exception("商品不存在.");
 
-            productInfo.setProductStock(result);
-            productInfoRepository.save(productInfo);
+                ProductInfo productInfo = productInfoOptional.get();
+                int result = productInfo.getProductStock() - orderItemInput.getProductQuantity();
+                if (result < 0)
+                    throw new Exception("商品库存不满足.");
+
+                productInfo.setProductStock(result);
+                productInfoRepository.save(productInfo);
+            }
+
+            stockResultOutput.setIsSuccess(true);
+            stockResultOutput.setMessage("OK");
+            return stockResultOutput;
+        } catch (Exception e) {
+            stockResultOutput.setIsSuccess(false);
+            stockResultOutput.setMessage(e.getMessage());
+            return stockResultOutput;
         }
+
     }
 
 }

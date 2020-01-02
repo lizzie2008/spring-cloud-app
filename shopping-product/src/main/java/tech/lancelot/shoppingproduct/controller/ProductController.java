@@ -76,9 +76,9 @@ public class ProductController {
         }
     }
 
-    @PostMapping("/decreaseStock")
-    public ResultVo decreaseStock(@RequestBody List<OrderItemInput> orderItemInputs) throws Exception {
-        productService.decreaseStock(orderItemInputs);
-        return ResultVo.success();
-    }
+//    @PostMapping("/decreaseStock")
+//    public ResultVo decreaseStock(@RequestBody List<OrderItemInput> orderItemInputs) throws Exception {
+//        productService.decreaseStock(orderItemInputs);
+//        return ResultVo.success();
+//    }
 }

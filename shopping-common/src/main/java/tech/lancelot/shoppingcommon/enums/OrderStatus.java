@@ -6,8 +6,10 @@ import lombok.Getter;
 /*订单状态*/
 public enum OrderStatus {
     NEW(0, "新建"),
-    COMPLETE(1, "完成"),
-    CANCEL(2, "取消");
+    OCCUPY_SUCCESS(1, "占用库存成功"),
+    OCCUPY_FAILURE(2, "占用库存失败"),
+    COMPLETE(3, "完成"),
+    CANCEL(4, "取消");
 
     private Integer code;
 

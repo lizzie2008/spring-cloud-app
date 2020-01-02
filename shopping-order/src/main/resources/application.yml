@@ -22,11 +22,11 @@ spring:
   cloud:
     stream:
       bindings:
-        myMessage:
+        stock_apply_output:           #占用库存申请
+          destination: stock.apply
+        stock_result_input:           #占用库存结果
+          destination: stock.result
           group: shopping-order
-          content-type: application/json
-#          consumer:
-#            acknowledge-mode: manual
 
 server:
   port: 9010
