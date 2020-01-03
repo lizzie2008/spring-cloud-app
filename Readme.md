@@ -1,4 +1,6 @@
-创建工程
+[toc]
+
+# 创建工程
 
 - 新建一个工程：选择Spring Cloud Bootstrap，对应的Spring Boot 版本2.2.2。
 
@@ -192,41 +194,7 @@ server:
 
 ![image-20191225113818560](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191225113820-81863.png) 
 
-# 统一配置中心
-
-上个环境中，我们有2个服务提供者，首先看下各自的配置，可以发现很大一部分都是重复的。
-
-如果微服务架构中没有使用统一配置中心时，所存在的问题：
-
-- 配置文件分散在各个项目里，不方便维护
-- 配置内容安全与权限，实际开发中，开发人员是不知道线上环境的配置的
-- 更新配置后，项目需要重启
-
-```yaml
-eureka:
-  client:
-    serviceUrl:
-      defaultZone: http://localhost:8761/eureka/ #指定服务注册地址
-
-spring:
-  application:
-    name: shopping-order  #应用名称
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: root
-    password: 123456
-    url: jdbc:mysql://localhost:3306/spring_cloud_app?characterEncoding=utf-8&useSSL=false&serverTimezone=UTC
-  jpa:
-    show-sql: true
-    database-platform: org.hibernate.dialect.MySQLDialect
-
-server:
-  port: 9010
-```
-
-因此，我们尝试来实现配置的集中管理，并支持配置的动态刷新。
-
-
+ 
 
 # 负载均衡(Ribbon)
 
@@ -410,6 +378,209 @@ public List<ProductInfoOutput> findProductInfosByIds(){
 在实现负载均衡基础上，封装声明式服务调用。实现shopping-order对shopping-product的透明调用，系统架构如图如下。
 
 ![image-20191226153226801](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191226153227-511711.png) 
+
+# 统一配置中心
+
+上个环境中，我们有2个服务提供者，首先看下各自的配置，可以发现很大一部分都是重复的。
+
+如果微服务架构中没有使用统一配置中心时，所存在的问题：
+
+- 配置文件分散在各个项目里，不方便维护
+- 配置内容安全与权限，实际开发中，开发人员是不知道线上环境的配置的
+- 更新配置后，项目需要重启
+
+```yaml
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/ #指定服务注册地址
+
+spring:
+  application:
+    name: shopping-order  #应用名称
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+    url: jdbc:mysql://localhost:3306/spring_cloud_app?characterEncoding=utf-8&useSSL=false&serverTimezone=UTC
+  jpa:
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+server:
+  port: 9010
+```
+
+对于一些简单的项目来说，我们一般都是直接把相关配置放在单独的配置文件中，以 properties 或者 yml 的格式出现，更省事儿的方式是直接放到 application.properties 或 application.yml 中。在集群部署情况下，我们尝试来实现配置的集中管理，并支持配置的动态刷新。
+
+## Config Server
+
+- 我们新建一个Module工程，统一配置中心，保存所以的配置信息。
+
+同样，我们作为子项目，修改相关依赖，加入对spring-cloud-config-server依赖
+
+```xml
+<modelVersion>4.0.0</modelVersion>
+<parent>
+    <groupId>tech.lancelot</groupId>
+    <artifactId>spring-cloud-app</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+</parent>
+
+<artifactId>config-server</artifactId>
+<packaging>jar</packaging>
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- spring cloud config 服务端包 -->
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-config-server</artifactId>
+    </dependency>
+</dependencies>
+```
+
+- application.properties进行如下配置
+
+```yaml
+spring:
+  application:
+    name: config-server  # 应用名称
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/lizzie2008/Central-Configuration.git #配置文件所在仓库
+          username: 'Github username'
+          password: 'Github password'
+          default-label: master #配置文件分支
+          search-paths: spring-cloud-app  #配置文件所在根目录
+          
+server:
+  port: 8888
+```
+
+- 在 Application 启动类上增加相关注解 `@EnableConfigServer`
+
+```java
+@EnableConfigServer
+@SpringBootApplication
+public class ConfigServerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigServerApplication.class, args);
+    }
+
+}
+```
+
+- 启动服务，接下来测试一下。
+
+Spring Cloud Config 有它的一套访问规则，我们通过这套规则在浏览器上直接访问就可以。
+
+```bash
+/{application}/{profile}[/{label}]
+/{application}-{profile}.yml
+/{label}/{application}-{profile}.yml
+/{application}-{profile}.properties
+/{label}/{application}-{profile}.properties
+```
+
+{application} 就是应用名称，对应到配置文件上来，就是配置文件的名称部分，例如我上面创建的配置文件。
+
+{profile} 就是配置文件的版本，我们的项目有开发版本、测试环境版本、生产环境版本，对应到配置文件上来就是以 application-{profile}.yml 加以区分，例如application-dev.yml、application-sit.yml、application-prod.yml。
+
+{label} 表示 git 分支，默认是 master 分支，如果项目是以分支做区分也是可以的，那就可以通过不同的 label 来控制访问不同的配置文件了。
+
+我们在git项目中，新建spring-cloud-app/config-eureka-server.yml配置文件,然后访问配置中心服务器，看看能正常获取配置文件。
+
+![image-20200103113636697](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103113641-423180.png) 
+
+## 向Eureka Server注册
+
+config-server本身作为一个服务，也可以作为服务提供方，向服务中心注册，其他的服务想要获取配置文件，只需要通过服务名称就会访问。
+
+- 引入Eureka Client依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+</dependency>
+```
+
+- 启动类上增加`@EnableDiscoveryClient`注解
+
+```java
+@EnableConfigServer
+@EnableDiscoveryClient
+@SpringBootApplication
+public class ConfigServerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigServerApplication.class, args);
+    }
+
+}
+```
+
+- 配置文件中增加eureka注册。
+
+```yaml
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka1:8761/eureka/,http://eureka2:8762/eureka/ #指定服务注册地址
+```
+
+- 启动eureka-server，看看config-server是否注册成功。
+
+![image-20200103140308595](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103140309-444069.png)
+
+## 服务提供端改造
+
+- shopping-product项目中，把原先的application.yml文件重命名为bootstrap.yml，并配置Eureka Server地址、应用名称、Config的实例名称。服务启动后，会链接Eureka Server服务器，根据Config的实例名称找到对应的Config服务器，并根据实例名称（可以增加profile属性）来匹配配置文件。
+
+```yml
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka1:8761/eureka/,http://eureka2:8762/eureka/ #指定服务注册地址
+
+spring:
+  application:
+    name: shopping-product  #应用名称
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: config-server
+```
+
+- 之前服务端其余的配置，填写在github配置项目shopping-product.yml文件中
+
+```yaml
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: 123456
+    url: jdbc:mysql://localhost:3306/spring_cloud_app?characterEncoding=utf-8&useSSL=false&serverTimezone=UTC
+  jpa:
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+server:
+  port: 9000
+```
+
+- 同样，shopping-order项目也如此改造，最后我们启动所有的服务，看是否都能正常启动。
+
+![image-20200103151517768](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103151521-984976.png)  
 
 # 异步消息（Stream）
 
