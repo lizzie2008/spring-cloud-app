@@ -1,7 +1,7 @@
 eureka:
   client:
     service-url:
-      defaultZone: http://peer2:8762/eureka/ #指定服务注册地址
+      defaultZone: http://eureka2:8762/eureka/ #指定服务注册地址
 
 server:
   port: 8761  #应用服务端口

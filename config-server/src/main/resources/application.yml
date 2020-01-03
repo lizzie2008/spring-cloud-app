@@ -1,2 +1,20 @@
+spring:
+  application:
+    name: config-server  # 应用名称
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/lizzie2008/Central-Configuration.git #配置文件所在仓库
+          username: 'github username'
+          password: 'github password'
+          default-label: master #配置文件分支
+          search-paths: spring-cloud-app  #配置文件所在根目录
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka1:8761/eureka/,http://eureka2:8762/eureka/ #指定服务注册地址
+
 server:
-  port: 3301
+  port: 8888
