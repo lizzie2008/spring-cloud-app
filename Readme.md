@@ -1,5 +1,3 @@
-[toc]
-
 # 创建工程
 
 - 新建一个工程：选择Spring Cloud Bootstrap，对应的Spring Boot 版本2.2.2。
@@ -500,7 +498,7 @@ Spring Cloud Config 有它的一套访问规则，我们通过这套规则在浏
 
 ![image-20200103113636697](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103113641-423180.png) 
 
-## 向Eureka Server注册
+## 向服务中心注册
 
 config-server本身作为一个服务，也可以作为服务提供方，向服务中心注册，其他的服务想要获取配置文件，只需要通过服务名称就会访问。
 
@@ -581,6 +579,98 @@ server:
 - 同样，shopping-order项目也如此改造，最后我们启动所有的服务，看是否都能正常启动。
 
 ![image-20200103151517768](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103151521-984976.png)  
+
+## 配置动态刷新
+
+- 首先，在`shopping-product.yml`增加一个配置属性来进行测试
+
+```yaml
+env: dev
+```
+
+- 新建一个测试controller来绑定这个配置属性，并提供api来返回属性的值
+
+```java
+@RestController
+@RequestMapping("api/env")
+public class EnvController {
+
+    @Value("${env}")
+    private String env;
+
+    @RequestMapping
+    public String printEnv() {
+        return env;
+    }
+}
+```
+
+- 访问http://localhost:9000/api/env，返回当前的值dev。
+
+  Spring Cloud Config 在项目启动时加载配置内容这一机制，但是如果我们修改配置文件内容后，不会自动刷新。例如我们上面的项目，当服务已经启动的时候，去修改 github 上的配置文件内容，这时候，再次刷新页面，对不起，还是旧的配置内容，新内容不会主动刷新过来。那应该怎么去触发配置信息的动态刷新呢？
+
+- 它提供了一个刷新机制，但是需要我们主动触发。那就是 @RefreshScope 注解并结合 actuator ，注意要引入 spring-boot-starter-actuator 包。
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+- EnvController上增加`@RefreshScope`注解
+- 发送 POST 请求到 http://localhost:9000/actuator/refresh 这个接口，默认没有开放endpoint的权限，所以这块我们首先配置开放权限
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+
+- 这时调用接口结束后，我们看到接口返回消息，表明env这个属性值已经刷新
+
+```json
+[
+    "config.client.version",
+    "env"
+]
+```
+
+- 再次访问http://localhost:9000/api/env，返回当前的值就是修改后的值test，证明配置属性的值已经动态刷新，我们的程序也不用再次启动。
+
+## 配置 Webhook
+
+每次改了配置后，就用 postman 访问一下 refresh 接口，还是不够方便。 github 提供了一种 webhook 的方式，当有代码变更的时候，会调用我们设置的地址，来实现我们想达到的目的。
+
+- 进入 github 仓库配置页面，选择 Webhooks ，并点击 add webhook；
+
+![image-20200103161333071](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200103161334-682427.png) 
+
+- 填上回调的地址
+
+  也就是上面提到的 actuator/refresh 这个地址，但是必须保证这个地址是可以被 github 访问到的。这样每当github上修改了配置文件，就自动通知对应的hook地址自动刷新。
+
+## 小结
+
+整体项目结构如下：
+
+> spring-cloud-app
+>
+> ​		--config-server（统一配置中心）
+>
+> ​		--eureka-server（服务注册中心）
+>
+> ​		--shopping-common（购物公共模块）
+>
+> ​		--shopping-product（商品服务模块）
+>
+> ​		--shopping-order（订单服务模块）
+
+更新系统架构，新建config-server节点，也向eureka-server注册，相关服务注册节点根据配置实例名称，路由到config-server节点，动态的加载配置。
+
+![image-20200104145953564](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200104145956-747211.png)  
 
 # 异步消息（Stream）
 
@@ -978,6 +1068,12 @@ public void processStockResult(StockResultOutput stockResultOutput) {
 
 执行调试结果，跟踪执行结果：生成订单同时发送库存申请命令，商品模块处理库存申请成功后，返回库存占用结果告知订单模块，从而实现订单生成和商品库存占用的逻辑的解耦。
 
+## 小结
+
+在原有的架构基础上，我们对商品和订单服务进行了应用解耦，库存占用逻辑异步化，通过消息队列传递消息，并结合spring cloud stream对消息input和output绑定，使得在程序中很方便的进行消息发送和接收处理。
+
+![image-20200104151114254](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200104151115-821748.png)  
+
 # 容器化部署
 
 ## 安装Docker
@@ -1101,34 +1197,30 @@ mvn clean package -Dmaven.test.skip=true -U
 docker build -t spring-cloud-app/eureka-server:v1 .
 ```
 
-- 编排镜像：
+## MySQL部署
 
-docker-compose.yml：
+- 拉取MySQL的镜像文件
+
+```bash
+[root@localhost ~]# docker pull mysql:5.7
+```
+
+- 在docker-compose.yml文件中相关配置
 
 ```yaml
-version: "2"
-services:
-  peer1:      # 默认情况下，其他服务可以使用服务名称连接到该服务。因此，对于peer2的节点，它需要连接http://peer1:8761/eureka/，因此需要配置该服务的名称是peer1。
-    image: spring-cloud-app/eureka-server:v1
-    hostname: peer1
+  mysql:
+    image: docker.io/mysql:5.7
+    hostname: mysql
     networks:
       - eureka-net
     ports:
-      - "8761:8761"
+      - "3306:3306"
     environment:
-      - spring.profiles.active=peer1
-  peer2:
-    image: spring-cloud-app/eureka-server:v1
-    hostname: peer2
-    networks:
-      - eureka-net
-    ports:
-      - "8762:8762"
-    environment:
-      - spring.profiles.active=peer2
-networks:
-  eureka-net:
-    driver: bridge
+      MYSQL_ROOT_PASSWORD: "123456"
+    volumes:
+      - "./mysql/conf:/etc/mysql"
+      - "./mysql/logs:/var/log/mysql"
+      - "./mysql/data:/var/lib/mysql"
 ```
 
 ## RabbitMQ
@@ -1142,3 +1234,62 @@ networks:
 访问端口管理界面，输入默认用户名/密码 ：guest/guest
 
 ![image-20191231144756782](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20191231144758-140801.png) 
+
+## 编排镜像
+
+docker-compose.yml：
+
+```yaml
+version: "2"
+services:
+  eureka1:      # 默认情况下，其他服务可以使用服务名称连接到该服务。因此，对于peer2的节点，它需要连接http://peer1:8761/eureka/，因此需要配置该服务的名称是peer1。
+    image: spring-cloud-app/eureka-server:v1
+    hostname: eureka1
+    networks:
+      - eureka-net
+    ports:
+      - "8761:8761"
+    environment:
+      - spring.profiles.active=peer1
+  eureka2:
+    image: spring-cloud-app/eureka-server:v1
+    hostname: eureka2
+    networks:
+      - eureka-net
+    ports:
+      - "8762:8762"
+    environment:
+      - spring.profiles.active=peer2
+  config-server:
+    image: spring-cloud-app/config-server:v1
+    hostname: config-server
+    networks:
+      - eureka-net
+    ports:
+      - "8888:8888"
+  mysql:
+    image: docker.io/mysql:5.7
+    hostname: mysql
+    networks:
+      - eureka-net
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+    volumes:
+      - "./mysql/conf:/etc/mysql"
+      - "./mysql/logs:/var/log/mysql"
+      - "./mysql/data:/var/lib/mysql"
+  rabbitmq:
+    image: docker.io/rabbitmq:3.8.2-management
+    hostname: rabbitmq
+    networks:
+      - eureka-net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+networks:
+  eureka-net:
+    driver: bridge
+```
+

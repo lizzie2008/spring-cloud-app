@@ -1,6 +1,6 @@
 version: "2"
 services:
-  eureka1:      # 默认情况下，其他服务可以使用服务名称连接到该服务。因此，对于peer2的节点，它需要连接http://peer1:8761/eureka/，因此需要配置该服务的名称是peer1。
+  eureka1:
     image: spring-cloud-app/eureka-server:v1
     hostname: eureka1
     networks:
@@ -25,6 +25,19 @@ services:
       - eureka-net
     ports:
       - "8888:8888"
+  mysql:
+    image: docker.io/mysql:5.7
+    hostname: mysql
+    networks:
+      - eureka-net
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+    volumes:
+      - "./mysql/conf:/etc/mysql"
+      - "./mysql/logs:/var/log/mysql"
+      - "./mysql/data:/var/lib/mysql"
   rabbitmq:
     image: docker.io/rabbitmq:3.8.2-management
     hostname: rabbitmq
