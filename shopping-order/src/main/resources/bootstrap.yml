@@ -11,3 +11,23 @@ spring:
       discovery:
         enabled: true
         service-id: config-server
+  sleuth:
+    sampler:
+      rate: 100
+  zipkin:
+    base-url: http://zipkin:9411/
+
+hystrix:
+  command:
+    default:        # 方法默认属性
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 1000
+    getProductEnv:  # 该名称方法属性
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 3000
+
+

@@ -46,6 +46,13 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+  zipkin:
+    image: docker.io/openzipkin/zipkin:2.19.2
+    hostname: zipkin
+    networks:
+      - eureka-net
+    ports:
+      - "9411:9411"
 networks:
   eureka-net:
     driver: bridge
