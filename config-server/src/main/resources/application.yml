@@ -14,7 +14,7 @@ spring:
 eureka:
   client:
     serviceUrl:
-      defaultZone: http://eureka1:8761/eureka/,http://eureka2:8762/eureka/ #指定服务注册地址
+      defaultZone: http://eureka-server:8761/eureka/ #指定服务注册地址
 
 server:
   port: 8888

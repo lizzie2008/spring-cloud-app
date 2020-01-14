@@ -1,7 +1,0 @@
-eureka:
-  client:
-    service-url:
-      defaultZone: http://eureka1:8761/eureka/ #指定服务注册地址
-
-server:
-  port: 8762  #应用服务端口

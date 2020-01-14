@@ -1,7 +1,9 @@
-package tech.lancelot.apigateway.filter;
+package tech.lancelot.apigateway.security;
 
 import com.google.common.util.concurrent.RateLimiter;
 import com.netflix.zuul.ZuulFilter;
+import com.netflix.zuul.context.RequestContext;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import static org.springframework.cloud.netflix.zuul.filters.support.FilterConstants.PRE_TYPE;
@@ -13,8 +15,8 @@ import static org.springframework.cloud.netflix.zuul.filters.support.FilterConst
 @Component
 public class RateLimitFilter extends ZuulFilter {
 
-    private static final RateLimiter RATE_LIMITER = RateLimiter.create(100);
-
+    //每秒产生N个令牌
+    private static final RateLimiter rateLimiter = RateLimiter.create(100);
 
     @Override
     public String filterType() {
@@ -35,8 +37,11 @@ public class RateLimitFilter extends ZuulFilter {
 
     @Override
     public Object run() {
-        if (!RATE_LIMITER.tryAcquire()) {
-            throw new RuntimeException("未能获取到令牌.");
+        if (!rateLimiter.tryAcquire()) {
+            RequestContext currentContext = RequestContext.getCurrentContext();
+            HttpStatus httpStatus = HttpStatus.TOO_MANY_REQUESTS;
+            currentContext.setSendZuulResponse(false);
+            currentContext.setResponseStatusCode(httpStatus.value());
         }
 
         return null;

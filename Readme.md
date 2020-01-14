@@ -4,6 +4,26 @@
 
 ## 版本信息
 
+
+
+端口映射信息：
+
+eureka1：8761
+
+eureka2：8762
+
+config-server：8888
+
+shopping-product：11100
+
+shopping-order：11110
+
+api-gateway：8080
+
+open-api：8081
+
+
+
 ## 源码地址
 
 ## 创建工程
@@ -600,6 +620,7 @@ env: dev
 
 ```java
 @RestController
+@RefreshScope
 @RequestMapping("api/env")
 public class EnvController {
 

@@ -15,6 +15,7 @@
         <module>shopping-product</module>
         <module>shopping-order</module>
         <module>api-gateway</module>
+        <module>open-api</module>
     </modules>
 
     <groupId>tech.lancelot</groupId>

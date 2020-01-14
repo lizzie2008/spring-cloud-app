@@ -1,0 +1,11 @@
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka-server:8761/eureka/ # 指定服务注册地址
+
+spring:
+  application:
+    name: open-api  # 应用名称
+
+server:
+  port: 8081
