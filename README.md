@@ -2,29 +2,38 @@
 
 # 前言
 
-## 版本信息
+## 开发环境
 
+- 部署环境：阿里云ECS服务器
 
+  - 操作系统：CentOS 7.7 64位
+  - IDEA 版本：2019.3.1
+  - docker 版本：1.13.1
+  - docker-compose版本：1.25.0
+  - spring cloud 版本：Hoxton.SR1
+  - spring boot 版本：2.2.2.RELEASE
+  - mysql 版本：5.7
+  - redis 版本：5.0.7
+  - rabbitmq 版本：3.8.2-management
+  - zipkin 版本：2.19.2
 
-端口映射信息：
+- 端口映射信息：
 
-eureka1：8761
+  - eureka1：8761 | eureka2：8762
 
-eureka2：8762
+  - config-server：8888
 
-config-server：8888
+  - shopping-product：11100
 
-shopping-product：11100
+  - shopping-order：11110
 
-shopping-order：11110
+  - api-gateway：8080
 
-api-gateway：8080
-
-open-api：8081
-
-
+  - open-api：8081
 
 ## 源码地址
+
+[https://github.com/lizzie2008/spring-cloud-app.git](https://github.com/lizzie2008/spring-cloud-app.git)
 
 ## 创建工程
 
@@ -1427,6 +1436,10 @@ public class RateLimitFilter extends ZuulFilter {
 >
 > ​		--shopping-order（订单服务模块）
 
+![image-20200120110546336](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200120110547-638144.png)    
+
+目前所有的客户端请求，首先被发送到统一网关服务处理，然后由网关进行限流、熔断、权限验证、记录日志等等，然后根据自定义的路由规则，再分发到不同的应用服务中去，应用服务器返回处理结果后，由网关统一返回给客户端。
+
 # 服务容错（[Hystrix](https://github.com/Netflix/Hystrix/wiki)）
 
 在分布式环境中，许多服务依赖项中的一些必然会失败。Hystrix是一个库，通过添加延迟容忍和容错逻辑，帮助你控制这些分布式服务之间的交互。Hystrix通过隔离服务之间的访问点、停止级联失败和提供回退选项来实现这一点，所有这些都可以提高系统的整体弹性。
@@ -1617,6 +1630,12 @@ public class ShoppingOrderApplication {
 - 填上我们监听的地址：http://shopping-order:11110/actuator/hystrix.stream ，点击Monitor Stream。进入监控的界面，我们再多刷新调用接口api，看看熔断执行的效果。
 
 ![image-20200107134932101](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200107134934-466831.png)   
+
+## 小结
+
+通过以上容错方法的实现，就可以构建更加稳定、可靠的分布式系统：
+
+![image-20200120110930786](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200120110934-615424.png) 
 
 # 服务追踪([Sleuth](https://spring.io/projects/spring-cloud-sleuth))
 
@@ -1809,6 +1828,12 @@ spring:
 - 可以点击查看详情，很方便的看到一次链路调用，每个节点的访问时间，利于我们排查性能问题
 
 ![image-20200107173659143](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200107173701-515028.png) 
+
+## 小结
+
+在服务调用的过程中，通过Sleuth将链路信息（经过抽样后的信息）统一上报给Zipkin，通过Zipkin就可以集中查看和管理微服务架构中的调用链路信息，便于开发人员与运维人员跟踪和调试问题。
+
+![image-20200120111709983](https://typora-lancelot.oss-cn-beijing.aliyuncs.com/typora/20200120111713-171394.png)  
 
 # 容器化部署
 
